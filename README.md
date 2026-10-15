@@ -5,14 +5,16 @@ PostgreSQL migrations for the RxLink **shared catalog** database (`C001`…), se
 ## Rules
 
 - Reference data only — **no patient data, no partner operational data** (I1, I5).
-- Deactivate, never delete (plan §5.2). Codes (`…Code` UUID) are stable forever and copied verbatim from the partner DB when seeding.
+- Deactivate, never delete (plan §5.2). Codes (`…Code` UUID) are stable forever; the reference seed (C006) uses fixed codes.
 - Only `rxlink-catalog-api` writes to this database; partners connect read-only.
 - Requires PostgreSQL 18+ (`uuidv7()`).
 - Non-production databases are built from migrations only, with synthetic data — never branch/clone production.
 
-## Seeding from a partner DB (Phase 4.3)
+## Reference seed (Phase 9.2)
 
-`scripts/seed-from-partner.sh <source> <target>` copies the ten catalog tables from a partner DB into an empty catalog DB with **identical ids and `…Code` UUIDs** (drops `Specialty` prices and `Medication.DeletedBy`; `Sex.IsActive` = true; `CoveragePercentage` → `DefaultCoveragePercentage`). It only reads the source and refuses to run on a non-empty target. `scripts/verify-against-partner.sh` compares row counts and an md5 of every `(id, code)` pair per table. Both accept `PSQL="podman exec -i pgtest psql -U postgres"` when no local psql exists (then the arguments are database names). The initial load writes `AuditLog` rows with no actor (the audit triggers fire on the seed inserts) — expected.
+`C006__reference_seed.sql` loads every catalog table with **fixed codes** of the form `c0deTTTT-0000-4000-8000-<old integer id, 12 digits>` (`TTTT`: 0001 Sex, 0002 DocumentType, 0003 Specialty, 0004 PharmaceuticalForm, 0005 AdministrationRoute, 0006 Frequency, 0007 Allergy, 0008 AllergySeverity, 0009 Medication, 0010 Insurance, 0011 MedicationClass), so partner seeds, tests and the devstack can refer to rows by literal. It also seeds a small set of medication classes, allergy links and interaction rules from C005. The medication list and rules are **synthetic development content**; production content is curated through `rxlink-platform` and needs clinical review. The seed runs as the migration owner with no `app.user_code`, so the audit triggers write rows with a NULL actor (expected).
+
+`scripts/verify-seed.sh <catalog-db>` checks row counts, NULL/duplicate codes and orphan rule rows (accepts `PSQL="podman exec -i pgtest psql -U postgres"` when no local psql exists; then the argument is the database name).
 
 ## Registering a partner (Phase 4.4)
 
